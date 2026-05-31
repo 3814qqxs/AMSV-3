@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { tokenInterval, verseMarkerInterval } from "@/lib/timing";
 import { motion, type PanInfo } from "motion/react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Verse } from "@/lib/bible";
 
 type Token =
@@ -17,6 +18,10 @@ export function ReadingPane({
   highlightPhrase,
   onPullDown,
   onTempo,
+  onTogglePlay,
+  onNext,
+  onPrev,
+  phraseMode = false,
 }: {
   verses: Verse[];
   wpm: number;
@@ -27,6 +32,10 @@ export function ReadingPane({
   highlightPhrase?: string | null;
   onPullDown: () => void;
   onTempo: (delta: number) => void;
+  onTogglePlay: () => void;
+  onNext: () => void;
+  onPrev: () => void;
+  phraseMode?: boolean;
 }) {
   const tokens = useMemo<Token[]>(() => {
     const out: Token[] = [];
@@ -38,18 +47,48 @@ export function ReadingPane({
     return out;
   }, [verses]);
 
+  // phraseEnd[i] = index of the last token in token i's phrase.
+  // In phrase mode: groups of ≤3 words, broken at punctuation boundaries.
+  // Verse markers are always their own single-token phrase.
+  const phraseEnd = useMemo<number[]>(() => {
+    const result = new Array(tokens.length);
+    if (!phraseMode) {
+      return result.map((_, i) => i);
+    }
+    let phraseStart = 0;
+    let wordCount = 0;
+    const closePhrase = (end: number) => {
+      for (let j = phraseStart; j <= end; j++) result[j] = end;
+      phraseStart = end + 1;
+      wordCount = 0;
+    };
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t.kind === "verse") {
+        if (wordCount > 0) closePhrase(i - 1);
+        result[i] = i;
+        phraseStart = i + 1;
+        continue;
+      }
+      wordCount++;
+      if (/[.?!,;:]/.test(t.text) || wordCount >= 3) {
+        closePhrase(i);
+      }
+    }
+    if (wordCount > 0) closePhrase(tokens.length - 1);
+    return result;
+  }, [tokens, phraseMode]);
+
   const [revealed, setRevealed] = useState(0);
 
-  // Background: accumulated text, scrolls to keep latest at bottom
+  // Background scroll: updates once per verse boundary (not per word)
+  const [bgScrollVerse, setBgScrollVerse] = useState(0);
   const bgRef = useRef<HTMLDivElement>(null);
-
-  // Foreground: 2-line reading stage
   const fgRef = useRef<HTMLDivElement>(null);
-  const lastWordRef = useRef<HTMLSpanElement>(null); // outer span (layout-stable, no transforms)
+  const lastWordRef = useRef<HTMLSpanElement>(null);
   const [lineHeightPx, setLineHeightPx] = useState(0);
   const lineHeightMeasured = useRef(false);
 
-  // Measure true line height from the first revealed word's computed style
   useLayoutEffect(() => {
     if (revealed < 1 || lineHeightMeasured.current) return;
     const el = lastWordRef.current;
@@ -61,44 +100,44 @@ export function ReadingPane({
     }
   }, [revealed]);
 
-
   // Reset on chapter change
   useEffect(() => {
     setRevealed(0);
+    setBgScrollVerse(0);
     lineHeightMeasured.current = false;
-    lastScrolledVerse.current = -1;
     if (fgRef.current) fgRef.current.scrollTop = 0;
     if (bgRef.current) bgRef.current.scrollTop = 0;
   }, [resetKey]);
 
-  // Playback timer — setTimeout chain with punctuation-aware intervals
+  // Playback timer — setTimeout chain, advances by phrase in phraseMode
   const revealedRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  // Track the effective base interval for the current verse (modified by tempo_hint)
   const verseBaseRef = useRef<number>(0);
 
   const scheduleNext = useCallback((current: number, globalBase: number) => {
     if (current >= tokens.length) return;
     const token = tokens[current];
 
-    // When a new verse starts, apply tempo_hint as a verse-level multiplier
     if (token.kind === "verse") {
       const hint = verses.find((v) => v.verse === token.verse)?.tempo_hint;
       verseBaseRef.current = hint && hint > 0 ? globalBase / hint : globalBase;
     }
 
     const base = verseBaseRef.current || globalBase;
+    // In phrase mode advance to end of phrase; otherwise advance by 1
+    const phraseLastIdx = phraseEnd[current];
+    const phraseLastToken = tokens[phraseLastIdx];
     const delay = token.kind === "verse"
       ? verseMarkerInterval(base)
-      : tokenInterval(token.text, base);
+      : tokenInterval(phraseLastToken.kind === "word" ? phraseLastToken.text : "", base);
 
     timerRef.current = setTimeout(() => {
-      const next = current + 1;
+      const next = phraseLastIdx + 1;
       revealedRef.current = next;
       setRevealed(next);
       scheduleNext(next, globalBase);
     }, Math.max(60, delay));
-  }, [tokens, verses]);
+  }, [tokens, verses, phraseEnd]);
 
   useEffect(() => {
     clearTimeout(timerRef.current);
@@ -108,47 +147,40 @@ export function ReadingPane({
     return () => clearTimeout(timerRef.current);
   }, [playing, wpm, scheduleNext]);
 
-  // Keep refs in sync when chapter changes
   useEffect(() => {
     revealedRef.current = 0;
     verseBaseRef.current = 0;
   }, [resetKey]);
 
-  // Active verse + revealed change callbacks
+  // Active verse + revealed callbacks; also drives background scroll verse state
   useEffect(() => {
     const last = tokens.slice(0, revealed).reverse().find((t) => t.kind === "word") as
       Extract<Token, { kind: "word" }> | undefined;
-    if (last) onActiveVerseChange(last.verse);
+    if (last) {
+      onActiveVerseChange(last.verse);
+      setBgScrollVerse((prev) => (prev !== last.verse ? last.verse : prev));
+    }
     onRevealedChange?.(revealed, tokens.length);
   }, [revealed, tokens, onActiveVerseChange, onRevealedChange]);
 
-  // Foreground: advance scroll when a new line starts.
-  // lastWordRef is on the outer span (unaffected by Framer Motion transforms) so
-  // offsetTop gives the stable CSS layout position relative to fgRef (position:relative).
+  // Background scroll — only fires when bgScrollVerse changes, not every word
+  useEffect(() => {
+    const bg = bgRef.current;
+    if (!bg) return;
+    bg.scrollTo({ top: bg.scrollHeight - bg.clientHeight, behavior: "smooth" });
+  }, [bgScrollVerse]);
+
+  // Foreground scroll — 3-line window: keep current line and 2 prior visible
   useEffect(() => {
     const fg = fgRef.current;
     const lastWord = lastWordRef.current;
     if (!fg || !lastWord || lineHeightPx <= 0) return;
     const lineIndex = Math.floor(lastWord.offsetTop / lineHeightPx);
-    // Keep current line (lineIndex) and previous line (lineIndex-1) visible.
-    // scrollTop = (lineIndex - 1) * lh positions lineIndex-1 at the top slot.
-    const target = Math.max(0, (lineIndex - 1) * lineHeightPx);
+    const target = Math.max(0, (lineIndex - 2) * lineHeightPx);
     if (target > fg.scrollTop) {
       fg.scrollTo({ top: target, behavior: "smooth" });
     }
   }, [revealed, lineHeightPx]);
-
-  // Background: scroll only when the active verse changes, not on every word reveal
-  const lastScrolledVerse = useRef(-1);
-  useEffect(() => {
-    const last = tokens.slice(0, revealed).reverse().find((t) => t.kind === "word") as
-      Extract<Token, { kind: "word" }> | undefined;
-    if (!last || last.verse === lastScrolledVerse.current) return;
-    lastScrolledVerse.current = last.verse;
-    const bg = bgRef.current;
-    if (!bg) return;
-    bg.scrollTo({ top: bg.scrollHeight - bg.clientHeight, behavior: "smooth" });
-  }, [revealed, tokens]);
 
   // Highlight phrase matching
   const phraseWords = useMemo(
@@ -180,12 +212,12 @@ export function ReadingPane({
     return false;
   }
 
-  // Pull-down gesture — handle stays fixed, only gesture offset/velocity is read
+  // Pull-down gesture
   function handlePullDragEnd(_: unknown, info: PanInfo) {
     if (info.offset.y > 60 || info.velocity.y > 500) onPullDown();
   }
 
-  // Tempo zone — stationary pointer events
+  // Tempo zone — wheel + swipe
   const lastWheelTime = useRef(0);
   const swipeStartY = useRef<number | null>(null);
 
@@ -211,15 +243,32 @@ export function ReadingPane({
     swipeStartY.current = null;
   }
 
+  // Tap-to-play-pause: only fires on genuine taps (< 5px movement), not drags
+  const tapDownPos = useRef<{ x: number; y: number } | null>(null);
+
+  function handlePanePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    tapDownPos.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function handlePanePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!tapDownPos.current) return;
+    const dx = Math.abs(e.clientX - tapDownPos.current.x);
+    const dy = Math.abs(e.clientY - tapDownPos.current.y);
+    tapDownPos.current = null;
+    if (dx < 5 && dy < 5) onTogglePlay();
+  }
+
   const revealedSlice = tokens.slice(0, revealed);
   const isComplete = revealed >= tokens.length && tokens.length > 0;
 
   return (
-    <div className="relative h-full">
+    <div
+      className="relative h-full"
+      onPointerDown={handlePanePointerDown}
+      onPointerUp={handlePanePointerUp}
+    >
 
-      {/* ── BACKGROUND LAYER ───────────────────────────────────────────────
-          All revealed text, blurred and dimmed, scrolling upward.
-          Completely decoupled from the foreground stage.         */}
+      {/* ── BACKGROUND LAYER ─────────────────────────────────────── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
         <div
           ref={bgRef}
@@ -245,8 +294,7 @@ export function ReadingPane({
         </div>
       </div>
 
-      {/* ── PULL-DOWN HANDLE ───────────────────────────────────────────────
-          On the wrapper (not a scroll container) so it stays at the pane top */}
+      {/* ── PULL-DOWN HANDLE ─────────────────────────────────────── */}
       <motion.div
         drag="y"
         dragConstraints={{ top: 0, bottom: 0 }}
@@ -254,25 +302,25 @@ export function ReadingPane({
         onDragEnd={handlePullDragEnd}
         className="chrome-element absolute inset-x-0 top-0 z-30 flex h-12 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
         aria-label="Pull down to see full chapter"
+        style={{ willChange: "transform" }}
       >
         <div className="h-1.5 w-12 rounded-full bg-primary/30" />
       </motion.div>
 
-      {/* ── FOREGROUND STAGE ───────────────────────────────────────────────
-          Fixed 2-line reading zone at 30 % from the top of the pane.
-          Words appear here with animation; the stage internally scrolls
-          upward when a new line starts — rolling like a typewriter.   */}
+      {/* ── FOREGROUND STAGE — 3-line reading zone ───────────────── */}
       <div
         className="absolute inset-x-6 z-10 md:inset-x-16"
-        style={{ top: "30%" }}
+        style={{ top: "28%" }}
       >
-        {/* Clip to exactly 2 lines; programmatic scrollTop advances the view */}
         <div
           ref={fgRef}
           className="relative overflow-y-scroll"
           style={{
-            height: lineHeightPx > 0 ? `${lineHeightPx * 2}px` : "3.1em",
+            height: lineHeightPx > 0 ? `${lineHeightPx * 3}px` : "4.65em",
             scrollbarWidth: "none",
+            // Fade the bottom of the 3-line window into the blurred background
+            maskImage: "linear-gradient(to bottom, black 55%, transparent 100%)",
+            WebkitMaskImage: "linear-gradient(to bottom, black 55%, transparent 100%)",
           }}
         >
           <p
@@ -295,20 +343,13 @@ export function ReadingPane({
               }
 
               return (
-                // Ref on outer span: offsetTop is CSS layout position, unaffected by
-                // Motion transforms on the inner motion.span.
                 <span
                   key={i}
                   ref={isLast ? lastWordRef : undefined}
                   className="relative"
                 >
                   <motion.span
-                    initial={{
-                      opacity: 0,
-                      y: 10,
-                      filter: "blur(3px)",
-                      scale: 0.97,
-                    }}
+                    initial={{ opacity: 0, y: 10, filter: "blur(3px)", scale: 0.97 }}
                     animate={{
                       opacity: 1,
                       y: 0,
@@ -326,7 +367,7 @@ export function ReadingPane({
                           : "none",
                     }}
                     transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-                    style={{ display: "inline-block" }}
+                    style={{ display: "inline-block", willChange: "transform, opacity, filter" }}
                   >
                     {t.text}
                   </motion.span>{" "}
@@ -337,18 +378,29 @@ export function ReadingPane({
         </div>
 
         {isComplete && (
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            — end of chapter — pull down to see the full text
+          <div className="mt-8 flex items-center justify-center gap-8">
+            <button
+              onClick={(e) => { e.stopPropagation(); onPrev(); }}
+              className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition hover:text-primary"
+            >
+              <ChevronLeft size={13} /> Prev
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onNext(); }}
+              className="flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground transition hover:text-primary"
+            >
+              Next <ChevronRight size={13} />
+            </button>
           </div>
         )}
       </div>
 
-      {/* ── SPEED ZONE ─────────────────────────────────────────────────────
-          Locked to the bottom of the pane. Scroll wheel or swipe up/down. */}
+      {/* ── SPEED ZONE ───────────────────────────────────────────── */}
       <div
         onWheel={handleTempoWheel}
         onPointerDown={handleTempoPointerDown}
         onPointerUp={handleTempoPointerUp}
+        onClick={(e) => e.stopPropagation()}
         className="absolute inset-x-0 bottom-0 z-20 flex cursor-ns-resize touch-none flex-col items-center justify-end pb-2.5 pt-6 pointer-events-auto"
         aria-label="Scroll or swipe up/down to change reading speed"
       >

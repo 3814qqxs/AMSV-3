@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence, type PanInfo } from "motion/react";
 import { BOOKS, TESTAMENT_GROUPS } from "@/lib/bible";
 
@@ -9,14 +9,33 @@ export function NavSheet({
   open,
   onCommit,
   onClose,
+  currentBook,
 }: {
   open: boolean;
   onCommit: (book: string, chapter: number) => void;
   onClose: () => void;
+  currentBook: string;
 }) {
+  // Derive which testament the currently-reading book belongs to
+  const defaultTestament = useMemo<Testament>(() => {
+    const isNT = TESTAMENT_GROUPS
+      .filter((g) => g.testament === "New Testament")
+      .some((g) => g.books.includes(currentBook));
+    return isNT ? "New Testament" : "Old Testament";
+  }, [currentBook]);
+
   const [view, setView] = useState<View>("books");
-  const [testament, setTestament] = useState<Testament>("New Testament");
+  const [testament, setTestament] = useState<Testament>(defaultTestament);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
+
+  // Reset internal state each time the sheet opens; set testament to match reader (1-D, 2-D)
+  useEffect(() => {
+    if (open) {
+      setView("books");
+      setSelectedBook(null);
+      setTestament(defaultTestament);
+    }
+  }, [open, defaultTestament]);
 
   function handleSelectBook(book: string) {
     setSelectedBook(book);
@@ -32,15 +51,10 @@ export function NavSheet({
     setView("books");
   }
 
+  // Dismiss sheet on y-drag regardless of which inner view is active (1-B, 1-C)
   function handleSheetDragEnd(_: unknown, info: PanInfo) {
-    if (view === "books" && (info.offset.y > 80 || info.velocity.y > 600)) {
+    if (info.offset.y > 80 || info.velocity.y > 600) {
       onClose();
-    }
-  }
-
-  function handlePlaneDragEnd(_: unknown, info: PanInfo) {
-    if (view === "chapters" && info.offset.x > 80) {
-      handleBack();
     }
   }
 
@@ -64,9 +78,9 @@ export function NavSheet({
           dragElastic={{ top: 0, bottom: 0.25 }}
           onDragEnd={handleSheetDragEnd}
           className="fixed inset-0 z-50 flex flex-col bg-ink/95 backdrop-blur-md"
-          style={{ touchAction: "none" }}
+          style={{ touchAction: "none", willChange: "transform" }}
         >
-          {/* Drag indicator */}
+          {/* Drag indicator — always visible, always draggable for y-dismiss (1-C) */}
           <div className="flex shrink-0 justify-center pt-3 pb-1">
             <div className="h-1 w-10 rounded-full bg-primary/30" />
           </div>
@@ -98,12 +112,7 @@ export function NavSheet({
                   animate={{ x: 0, opacity: 1 }}
                   exit={{ x: "100%", opacity: 0 }}
                   transition={{ type: "tween", ease: [0.32, 0.72, 0, 1], duration: 0.32 }}
-                  drag="x"
-                  dragConstraints={{ left: 0, right: 0 }}
-                  dragElastic={{ left: 0, right: 0.25 }}
-                  onDragEnd={handlePlaneDragEnd}
                   className="absolute inset-0 flex flex-col"
-                  style={{ touchAction: "none" }}
                 >
                   <ChapterPicker
                     book={selectedBook ?? ""}
@@ -136,7 +145,7 @@ function BookPicker({
 }) {
   return (
     <>
-      {/* Header */}
+      {/* Header — pinned, never scrolls */}
       <div className="shrink-0 px-6 pt-2 pb-4">
         <div className="flex items-center justify-between">
           <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Select book</p>
@@ -166,7 +175,7 @@ function BookPicker({
         </div>
       </div>
 
-      {/* Book list grouped by section */}
+      {/* Book list — scrolls */}
       <div className="flex-1 overflow-y-auto px-6 pb-8" style={{ scrollbarWidth: "none" }}>
         {groups.map((g) => (
           <div key={g.section} className="mb-6">
@@ -204,7 +213,7 @@ function ChapterPicker({
 }) {
   return (
     <>
-      {/* Header */}
+      {/* Header — shrink-0 so it stays pinned above the scrollable grid (3-D) */}
       <div className="shrink-0 px-6 pt-2 pb-4">
         <div className="flex items-center gap-3">
           <button
@@ -220,7 +229,7 @@ function ChapterPicker({
         </p>
       </div>
 
-      {/* Chapter grid */}
+      {/* Chapter grid — scrolls independently; header stays fixed above */}
       <div className="flex-1 overflow-y-auto px-6 pb-8" style={{ scrollbarWidth: "none" }}>
         <div className="grid grid-cols-5 gap-2 sm:grid-cols-7">
           {Array.from({ length: chapters }, (_, i) => i + 1).map((c) => (
