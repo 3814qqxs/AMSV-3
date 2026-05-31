@@ -9,16 +9,50 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.models import BibleText
 
-VERSE_PATTERN = re.compile(r"^([1-3]?\s?[A-Za-z]+)\s+(\d+):(\d+)\s+(.*)$")
+# Flexible pattern: matches any book name (including multi-word like "Song of Solomon")
+# by capturing everything before the first chapter:verse pattern.
+VERSE_PATTERN = re.compile(r"^(.+?)\s+(\d+):(\d+)\s+(.+)$")
+
+# Normalize source book names to match the frontend's canonical names.
+# Add entries here whenever a source file uses a non-standard name.
+BOOK_NAME_MAP: dict[str, str] = {
+    "psalm": "Psalms",
+    "psalms": "Psalms",
+    "song of songs": "Song of Solomon",
+    "song of solomon": "Song of Solomon",
+    "canticle of canticles": "Song of Solomon",
+    "1st samuel": "1 Samuel",
+    "2nd samuel": "2 Samuel",
+    "1st kings": "1 Kings",
+    "2nd kings": "2 Kings",
+    "1st chronicles": "1 Chronicles",
+    "2nd chronicles": "2 Chronicles",
+    "1st corinthians": "1 Corinthians",
+    "2nd corinthians": "2 Corinthians",
+    "1st thessalonians": "1 Thessalonians",
+    "2nd thessalonians": "2 Thessalonians",
+    "1st timothy": "1 Timothy",
+    "2nd timothy": "2 Timothy",
+    "1st peter": "1 Peter",
+    "2nd peter": "2 Peter",
+    "1st john": "1 John",
+    "2nd john": "2 John",
+    "3rd john": "3 John",
+}
+
+
+def normalize_book_name(raw: str) -> str:
+    return BOOK_NAME_MAP.get(raw.strip().lower(), raw.strip())
 
 
 def parse_line(line: str):
     match = VERSE_PATTERN.match(line.strip())
     if not match:
         return None
-    book, chapter, verse, text = match.groups()
+    raw_book, chapter, verse, text = match.groups()
+    book = normalize_book_name(raw_book)
     return {
-        "book": book.strip(),
+        "book": book,
         "chapter": int(chapter),
         "verse": int(verse),
         "translation": text.strip(),
@@ -33,6 +67,7 @@ def import_text(filepath: str):
 
     db: Session = SessionLocal()
     imported = 0
+    skipped = 0
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
@@ -40,11 +75,12 @@ def import_text(filepath: str):
                     continue
                 data = parse_line(line)
                 if not data:
+                    skipped += 1
                     continue
                 db.add(BibleText(**data))
                 imported += 1
         db.commit()
-        print(f"Import complete: {imported} verses loaded.")
+        print(f"Import complete: {imported} verses loaded, {skipped} lines skipped.")
     except Exception as exc:
         db.rollback()
         print(f"Import failed after {imported} verses: {exc}", file=sys.stderr)

@@ -127,3 +127,91 @@ These do not block the Vite dev build.
 - Phase 2 entry point: commentary + cross-reference data entry via GitHub (user-directed, separate activity)
 - Infrastructure risk: any "sign in" / reading history sync feature requires a `users` table — flag before designing
 - Revisit plan trigger: `/closeout` → update this file → new `/brainstorm` for Phase 2
+
+---
+
+## Session 2026-05-31 — V2 Build Sprint
+
+**Source:** `2026-05-30-uat-poc.md` + `2026-05-31-v2-development-plan.md`
+**Restore point:** git commit `restore: POC v1 complete — pre-V2 implementation` (first commit on repo)
+
+---
+
+### Track 1 — Bug Fixes
+
+**1-A Background scroll cadence**
+Replaced `revealed`-dependent background scroll with a dedicated `bgScrollVerse` state. Updates only when the active verse number changes. Scroll effect depends on `bgScrollVerse` alone — one scroll per verse boundary.
+
+**1-B/C NavSheet spring-close + drag pill in chapters view**
+Removed the `view === "books"` guard from `handleSheetDragEnd` — sheet dismisses on y-drag from either view. Removed `drag="x"` from the chapter motion plane (UAT 6.17 skipped), eliminating the touch-event conflict blocking the outer y-drag.
+
+**1-D NavSheet state reset on second navigation**
+Added `useEffect` watching `open`: resets `view → "books"`, `selectedBook → null`, `testament → defaultTestament` on every open. Fixes the second-navigation failure.
+
+**1-E Animation jank**
+Added `willChange: "transform"` and `willChange: "transform, opacity, filter"` to NavSheet, HistoryPane, ReadingPane word spans, and pull-down handle.
+
+**1-F Long-book (Psalms) load failure**
+Rewrote import script regex to `^(.+?)\s+(\d+):(\d+)\s+(.+)$` — lazy `.+?` captures multi-word book names. Added `BOOK_NAME_MAP` normalization dict (e.g., "Psalm" → "Psalms", "Song of Songs" → "Song of Solomon"). Skipped-line counter added to import output.
+
+---
+
+### Track 2 — Interaction Model
+
+**2-A Tap anywhere to play/pause**
+Added pointer handlers to ReadingPane root div with a 5px distance guard. Speed zone and end-of-chapter buttons call `e.stopPropagation()`.
+
+**2-B HistoryPane swipe-up to close**
+Replaced "Close" button with a top drag-handle pill (`drag="y"`, `dragElastic={{ top: 0.25, bottom: 0 }}`). Dismiss on `offset.y < -60 || velocity.y < -400`.
+
+**2-C HistoryPane bottom strip opens NavSheet**
+Replaced "Change" button with a bottom swipe-up strip. Swipe up ≥ 40px calls `onNavigate`. Structure: top handle (close) → text → bottom strip (navigate to NavSheet).
+
+**2-D NavSheet defaults to current book's testament**
+Added `currentBook: string` prop. Derives `defaultTestament` via `useMemo`. Resets to active book's testament on every open.
+
+**2-E Touch targets for side panes**
+Added recessed left/right edge tap buttons on reading card. Both carry `chrome-element` class; thin `h-10 w-1` pill indicators.
+
+---
+
+### Track 3 — Visual Polish
+
+**3-A AMSV label** — "ASV" → "AMSV" in TopBar, watermark, page title, and meta.
+
+**3-B Chrome recession unification** — Removed `chrome-element` from TopBar and verse badge. Both stay fully visible during playback, matching WPM behaviour.
+
+**3-C End-of-chapter arrows** — Replaced text with `← Prev` / `Next →` buttons using Lucide chevrons. Props `onPrev` / `onNext` added to ReadingPane.
+
+**3-D ← Books pin** — Confirmed already in `shrink-0` header above the scrollable grid; annotated in code.
+
+---
+
+### Track 4 — Phase 2 Features
+
+**4-A Phrase-based reveal** — `phraseMode?: boolean` prop. Pre-computes `phraseEnd[]` map; phrases are ≤3 words broken at punctuation. `scheduleNext` advances to `phraseEnd[current] + 1` in one step.
+
+**4-B Three-line stage** — Stage height `lineHeightPx * 3`, scroll target `(lineIndex - 2) * lh`, bottom `mask-image` gradient blends into background.
+
+**4-C Cinematic cross-ref transition** — New `CrossRefTransition` component: source text scrolls upward rapidly (1.4 s), target ref fades in at center. `jumpToRef` triggers, waits 1.1 s, loads chapter, clears overlay.
+
+**4-D Speed presets** — `SPEED_PRESETS = [150, 250, 400]` with `Low / Med / High` labels. Bottom-right chrome button cycles presets on tap.
+
+**4-E Welcome splash** — New `WelcomeScreen` + `useWelcomed` hook (localStorage `amsv-welcomed`). "Begin with John 1" or embedded NavSheet to choose starting point.
+
+---
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `frontend/.../ReadingPane.tsx` | Rewrote: 1-A, 1-E, 2-A, 3-C, 4-A, 4-B |
+| `frontend/.../NavSheet.tsx` | Rewrote: 1-B/C, 1-D, 2-D, 3-D |
+| `frontend/.../HistoryPane.tsx` | Rewrote: 2-B, 2-C |
+| `frontend/.../TopBar.tsx` | 3-A, 3-B |
+| `frontend/.../index.tsx` | Rewrote: all wiring + 2-E, 3-A, 3-B, 4-C, 4-D, 4-E |
+| `frontend/.../CrossRefTransition.tsx` | New: 4-C |
+| `frontend/.../WelcomeScreen.tsx` | New: 4-E |
+| `backend/scripts/import_bible_text.py` | 1-F regex + normalization |
+
+**TypeScript:** Only the 5 pre-existing errors remain (Verse not exported from `@/lib/bible`, utils.ts missing clsx/tailwind-merge). No new errors.

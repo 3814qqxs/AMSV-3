@@ -1,5 +1,5 @@
-import { motion, AnimatePresence } from "motion/react";
-import { X } from "lucide-react";
+import { useRef } from "react";
+import { motion, AnimatePresence, type PanInfo } from "motion/react";
 import type { Verse } from "@/lib/bible";
 
 export function HistoryPane({
@@ -12,24 +12,41 @@ export function HistoryPane({
 }: {
   open: boolean;
   verses: Verse[];
-  revealed: number; // total token count revealed (verse markers + words)
+  revealed: number;
   onClose: () => void;
   onNavigate: () => void;
   reference: string;
 }) {
-  // Build verse groups with a revealed flag per word.
-  // Token layout mirrors ReadingPane: [verse_marker, word, word, ..., verse_marker, ...]
-  // A token at index i is revealed when i < revealed.
   const groups: { verse: number; words: { text: string; done: boolean }[] }[] = [];
   let idx = 0;
   for (const v of verses) {
-    idx++; // consume verse marker token
-    const words = v.text.split(/\s+/).filter(Boolean).map((text) => {
+    idx++;
+    const words = (v.text as string).split(/\s+/).filter(Boolean).map((w: string) => {
       const done = idx < revealed;
       idx++;
-      return { text, done };
+      return { text: w, done };
     });
     groups.push({ verse: v.verse, words });
+  }
+
+  // Swipe UP on the top handle → close and return to reading pane (2-B)
+  function handleTopDragEnd(_: unknown, info: PanInfo) {
+    if (info.offset.y < -60 || info.velocity.y < -400) onClose();
+  }
+
+  // Swipe UP on the bottom strip → open NavSheet to browse (2-C)
+  const navSwipeStartY = useRef<number | null>(null);
+
+  function handleNavPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    navSwipeStartY.current = e.clientY;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handleNavPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (navSwipeStartY.current === null) return;
+    const dy = navSwipeStartY.current - e.clientY;
+    if (dy > 40) onNavigate();
+    navSwipeStartY.current = null;
   }
 
   return (
@@ -40,32 +57,34 @@ export function HistoryPane({
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: "-100%", opacity: 0 }}
           transition={{ type: "spring", stiffness: 280, damping: 34 }}
-          className="fixed inset-0 z-40 overflow-y-auto bg-ink/90 backdrop-blur-md"
+          className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-ink/90 backdrop-blur-md"
+          style={{ willChange: "transform" }}
         >
-          <div className="mx-auto max-w-3xl px-6 py-12 md:px-12 md:py-20">
-            <header className="mb-8 flex items-baseline justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
-                  Full chapter
-                </p>
-                <h2 className="font-serif text-3xl text-primary">{reference}</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onNavigate}
-                  className="rounded-full border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground"
-                >
-                  Change
-                </button>
-                <button
-                  onClick={onClose}
-                  className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground"
-                >
-                  <X size={14} /> Close
-                </button>
-              </div>
-            </header>
+          {/* Top drag handle — swipe UP to return to reading pane */}
+          <motion.div
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0.25, bottom: 0 }}
+            onDragEnd={handleTopDragEnd}
+            className="shrink-0 flex cursor-s-resize touch-none flex-col items-center pt-3 pb-2"
+            aria-label="Swipe up to return to reading pane"
+          >
+            <div className="h-1 w-10 rounded-full bg-primary/30" />
+          </motion.div>
 
+          {/* Header */}
+          <div className="shrink-0 px-6 pb-4 md:px-12">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+              Full chapter
+            </p>
+            <h2 className="font-serif text-3xl text-primary">{reference}</h2>
+          </div>
+
+          {/* Scrollable text */}
+          <div
+            className="flex-1 overflow-y-auto px-6 pb-4 md:px-12"
+            style={{ scrollbarWidth: "none" }}
+          >
             {groups.length === 0 ? (
               <p className="text-muted-foreground">Loading chapter…</p>
             ) : (
@@ -76,11 +95,7 @@ export function HistoryPane({
                     {g.words.map((w, wi) => (
                       <span
                         key={wi}
-                        className={
-                          w.done
-                            ? "text-foreground/90"
-                            : "text-muted-foreground/30"
-                        }
+                        className={w.done ? "text-foreground/90" : "text-muted-foreground/30"}
                       >
                         {w.text}{" "}
                       </span>
@@ -89,6 +104,16 @@ export function HistoryPane({
                 ))}
               </article>
             )}
+          </div>
+
+          {/* Bottom strip — swipe UP to open NavSheet for browsing */}
+          <div
+            onPointerDown={handleNavPointerDown}
+            onPointerUp={handleNavPointerUp}
+            className="shrink-0 flex h-8 cursor-n-resize touch-none items-center justify-center"
+            aria-label="Swipe up to browse books and chapters"
+          >
+            <div className="h-1 w-10 rounded-full bg-primary/25" />
           </div>
         </motion.div>
       )}
