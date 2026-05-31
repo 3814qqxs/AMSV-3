@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prototype — Atmosphere & Animation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Inter:wght@300;400;500&display=swap');
+
+  :root {
+    --background: oklch(0.16 0.012 70);
+    --foreground: oklch(0.94 0.02 80);
+    --card: oklch(0.20 0.014 70);
+    --primary: oklch(0.82 0.13 80);
+    --muted-foreground: oklch(0.62 0.025 80);
+    --border: oklch(0.30 0.018 70 / 60%);
+    --ink: oklch(0.10 0.008 70);
+    --secondary: oklch(0.26 0.018 70);
+    --font-serif: 'Cormorant Garamond', Georgia, serif;
+    --font-sans: 'Inter', system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: radial-gradient(ellipse at top, oklch(0.22 0.02 70) 0%, var(--background) 60%, var(--ink) 100%);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  /* ── CHROME RECESSION ─────────────────────────────────────── */
+  .chrome {
+    transition: opacity 0.9s ease;
+  }
+  body.playing .chrome {
+    opacity: 0.18;
+  }
+  body.paused .chrome {
+    opacity: 1;
+  }
+
+  /* ── TOP BAR ──────────────────────────────────────────────── */
+  .topbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+  }
+  .topbar-ref {
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    color: var(--primary);
+    letter-spacing: 0.03em;
+  }
+  .topbar-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .btn {
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .btn:hover { color: var(--foreground); border-color: oklch(0.5 0.02 70); }
+  .btn.primary {
+    background: oklch(0.26 0.018 70);
+    color: var(--primary);
+    border-color: oklch(0.82 0.13 80 / 30%);
+  }
+
+  /* ── PANE SURFACE ─────────────────────────────────────────── */
+  .pane {
+    position: absolute;
+    left: 0.5rem; right: 0.5rem;
+    top: 5rem; bottom: 1.5rem;
+    border-radius: 1.75rem;
+    overflow: hidden;
+    background: linear-gradient(180deg, oklch(0.22 0.014 70 / 0.85), oklch(0.18 0.012 70 / 0.92));
+    border: 1px solid oklch(0.82 0.13 80 / 0.18);
+    box-shadow: 0 30px 80px -20px oklch(0 0 0 / 0.7), inset 0 1px 0 oklch(1 0 0 / 0.04);
+  }
+
+  /* ── BACKGROUND LAYER ─────────────────────────────────────── */
+  .bg-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .bg-scroll {
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .bg-scroll::-webkit-scrollbar { display: none; }
+  .bg-text {
+    font-family: var(--font-serif);
+    font-size: clamp(1.4rem, 2.6vw, 2rem);
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+    padding: 3rem 2rem 60vh;
+    filter: blur(10px);
+    opacity: 0.15;
+  }
+
+  /* ── FOREGROUND STAGE ─────────────────────────────────────── */
+  .fg-stage {
+    position: absolute;
+    left: 1.5rem; right: 1.5rem;
+    top: 30%;
+    z-index: 10;
+  }
+  .fg-clip {
+    position: relative;
+    overflow-y: scroll;
+    scrollbar-width: none;
+    height: 3.1em; /* will be set dynamically */
+  }
+  .fg-clip::-webkit-scrollbar { display: none; }
+  .fg-text {
+    font-family: var(--font-serif);
+    font-size: clamp(1.4rem, 2.6vw, 2rem);
+    line-height: 1.55;
+    letter-spacing: -0.01em;
+    overflow-wrap: break-word;
+  }
+
+  .end-msg {
+    margin-top: 1.5rem;
+    text-align: center;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    color: var(--muted-foreground);
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .end-msg.visible { opacity: 1; }
+
+  /* ── WORD ANIMATION (BREATH) ──────────────────────────────── */
+  @keyframes wordArrive {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.97);
+      filter: blur(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0px);
+    }
+  }
+
+  .word {
+    display: inline-block;
+    animation: wordArrive 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .word.last {
+    color: var(--primary);
+    text-shadow: 0 0 28px oklch(0.82 0.13 80 / 0.45);
+  }
+  .word.settled {
+    color: var(--foreground);
+    text-shadow: none;
+  }
+
+  /* ── VERSE BADGE ──────────────────────────────────────────── */
+  .verse-badge {
+    position: absolute;
+    right: 1rem; top: 1rem;
+    z-index: 20;
+    border-radius: 999px;
+    background: oklch(0.10 0.008 70 / 60%);
+    padding: 0.2rem 0.75rem;
+    font-family: var(--font-serif);
+    font-size: 0.75rem;
+    color: var(--primary);
+    backdrop-filter: blur(4px);
+    transition: opacity 0.4s ease;
+  }
+
+  /* ── PULL HANDLE ──────────────────────────────────────────── */
+  .pull-handle {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    cursor: grab;
+  }
+  .pull-handle-bar {
+    width: 3rem;
+    height: 0.375rem;
+    border-radius: 999px;
+    background: oklch(0.82 0.13 80 / 30%);
+  }
+
+  /* ── SPEED ZONE ───────────────────────────────────────────── */
+  .speed-zone {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 0.75rem;
+    padding-top: 1.5rem;
+  }
+  .speed-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    color: oklch(0.62 0.025 80 / 40%);
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    font-family: var(--font-sans);
+  }
+  .speed-hint svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+  /* ── WATERMARK ────────────────────────────────────────────── */
+  .watermark {
+    position: fixed;
+    bottom: 0.5rem; left: 0.75rem;
+    font-family: var(--font-sans);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3em;
+    color: oklch(0.62 0.025 80 / 60%);
+    pointer-events: none;
+  }
+
+  /* ── GRADIENT FADES ───────────────────────────────────────── */
+  .fade-top {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4rem;
+    background: linear-gradient(to bottom, oklch(0.22 0.014 70 / 0.85), transparent);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .fade-bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 6rem;
+    background: linear-gradient(to top, oklch(0.18 0.012 70 / 0.92), transparent);
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  /* ── DEMO CONTROLS ────────────────────────────────────────── */
+  .demo-bar {
+    position: fixed;
+    bottom: 1.8rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    gap: 0.5rem;
+    background: oklch(0.12 0.01 70 / 90%);
+    border: 1px solid oklch(0.30 0.018 70);
+    border-radius: 999px;
+    padding: 0.4rem 0.75rem;
+    backdrop-filter: blur(8px);
+    font-family: var(--font-sans);
+    font-size: 0.65rem;
+    color: var(--muted-foreground);
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .demo-bar label { cursor: pointer; }
+  .demo-bar input[type=range] { width: 80px; accent-color: var(--primary); cursor: pointer; }
+  .demo-btn {
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid oklch(0.30 0.018 70);
+    background: transparent;
+    color: var(--primary);
+    font-size: 0.65rem;
+    font-family: var(--font-sans);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+  }
+  .demo-btn:hover { background: oklch(0.20 0.014 70); }
+</style>
+</head>
+<body class="paused">
+
+<!-- CHROME: TopBar -->
+<header class="topbar chrome">
+  <span class="topbar-ref">John 3</span>
+  <div class="topbar-controls">
+    <button class="btn">← Refs</button>
+    <button class="btn primary" id="playBtn">Play</button>
+    <button class="btn">Notes →</button>
+  </div>
+</header>
+
+<!-- READING PANE -->
+<div class="pane">
+
+  <!-- BACKGROUND LAYER -->
+  <div class="bg-layer" aria-hidden>
+    <div class="bg-scroll" id="bgScroll">
+      <div class="bg-text" id="bgText"></div>
+    </div>
+  </div>
+
+  <!-- FOREGROUND STAGE -->
+  <div class="fg-stage">
+    <div class="fg-clip" id="fgClip">
+      <p class="fg-text" id="fgText"></p>
+    </div>
+    <div class="end-msg" id="endMsg">— end of chapter — pull down to see the full text</div>
+  </div>
+
+  <!-- CHROME: Pull handle -->
+  <div class="pull-handle chrome" aria-label="Pull down to see full chapter">
+    <div class="pull-handle-bar"></div>
+  </div>
+
+  <!-- CHROME: Verse badge -->
+  <div class="verse-badge chrome" id="verseBadge">v. 1</div>
+
+  <!-- CHROME: Speed zone -->
+  <div class="speed-zone chrome">
+    <div class="speed-hint">
+      <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
+      <span>speed</span>
+      <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+  </div>
+
+  <div class="fade-top"></div>
+  <div class="fade-bottom"></div>
+</div>
+
+<!-- CHROME: Watermark -->
+<div class="watermark chrome">Lectio · ASV (public domain)</div>
+
+<!-- DEMO CONTROLS -->
+<div class="demo-bar">
+  <label>WPM <input type="range" id="wpmSlider" min="0" max="500" step="50" value="200" /></label>
+  <span id="wpmDisplay">200</span>
+  <button class="demo-btn" id="resetBtn">Reset</button>
+</div>
+
+<script>
+// ── Sample text (John 3:1-5 ASV) ─────────────────────────────
+const VERSES = [
+  { verse: 1, text: "Now there was a man of the Pharisees, named Nicodemus, a ruler of the Jews:" },
+  { verse: 2, text: "the same came unto him by night, and said to him, Rabbi, we know that thou art a teacher come from God; for no one can do these signs that thou doest, except God be with him." },
+  { verse: 3, text: "Jesus answered and said unto him, Verily, verily, I say unto thee, Except one be born anew, he cannot see the kingdom of God." },
+  { verse: 4, text: "Nicodemus saith unto him, How can a man be born when he is old? can he enter a second time into his mother's womb, and be born?" },
+  { verse: 5, text: "Jesus answered, Verily, verily, I say unto thee, Except one be born of water and the Spirit, he cannot enter into the kingdom of God." },
+];
+
+// ── Token model (mirrors ReadingPane) ────────────────────────
+const tokens = [];
+for (const v of VERSES) {
+  tokens.push({ kind: 'verse', verse: v.verse });
+  for (const w of v.text.split(/\s+/).filter(Boolean)) {
+    tokens.push({ kind: 'word', text: w, verse: v.verse });
+  }
+}
+
+// ── Punctuation-aware timing ──────────────────────────────────
+function pauseMultiplier(token) {
+  if (token.kind === 'verse') return 1.8;
+  const t = token.text;
+  const last = t[t.length - 1];
+  if (['.', '?', '!'].includes(last)) return 2.5;
+  if ([',', ';', ':'].includes(last)) return 1.5;
+  if (last === '—' || t.endsWith('—')) return 1.3;
+  return 1.0;
+}
+
+// ── State ─────────────────────────────────────────────────────
+let revealed = 0;
+let playing = false;
+let wpm = 200;
+let timerId = null;
+let lineHeightPx = 0;
+let lastVerseRevealed = 0;
+
+const fgText = document.getElementById('fgText');
+const fgClip = document.getElementById('fgClip');
+const bgText = document.getElementById('bgText');
+const bgScroll = document.getElementById('bgScroll');
+const verseBadge = document.getElementById('verseBadge');
+const endMsg = document.getElementById('endMsg');
+const playBtn = document.getElementById('playBtn');
+const wpmSlider = document.getElementById('wpmSlider');
+const wpmDisplay = document.getElementById('wpmDisplay');
+const resetBtn = document.getElementById('resetBtn');
+
+// ── Render foreground ─────────────────────────────────────────
+function renderFg() {
+  fgText.innerHTML = '';
+  const slice = tokens.slice(0, revealed);
+  slice.forEach((t, i) => {
+    if (t.kind === 'verse') {
+      const sup = document.createElement('sup');
+      sup.style.cssText = 'margin: 0 0.25rem; font-size: 0.42em; font-family: var(--font-sans); font-weight: 600; color: oklch(0.82 0.13 80 / 0.9);';
+      sup.textContent = t.verse;
+      fgText.appendChild(sup);
+    } else {
+      const outer = document.createElement('span');
+      outer.style.cssText = 'position: relative;';
+
+      const inner = document.createElement('span');
+      inner.className = 'word' + (i === revealed - 1 ? ' last' : '');
+      inner.textContent = t.text;
+
+      // Remove 'last' class from previous last word
+      outer.appendChild(inner);
+      fgText.appendChild(outer);
+      fgText.appendChild(document.createTextNode(' '));
+    }
+  });
+
+  // Measure line height from first word
+  if (lineHeightPx === 0 && revealed > 0) {
+    const firstWord = fgText.querySelector('.word');
+    if (firstWord) {
+      const lh = parseFloat(window.getComputedStyle(firstWord).lineHeight);
+      if (!isNaN(lh) && lh > 0) {
+        lineHeightPx = lh;
+        fgClip.style.height = (lh * 2) + 'px';
+      }
+    }
+  }
+
+  // Scroll foreground
+  if (lineHeightPx > 0) {
+    const lastOuter = fgText.querySelectorAll('span[style*="position"]');
+    const lastEl = lastOuter[lastOuter.length - 1];
+    if (lastEl) {
+      const lineIndex = Math.floor(lastEl.offsetTop / lineHeightPx);
+      const target = Math.max(0, (lineIndex - 1) * lineHeightPx);
+      if (target > fgClip.scrollTop) {
+        fgClip.scrollTo({ top: target, behavior: 'smooth' });
+      }
+    }
+  }
+
+  // Update verse badge
+  const lastWord = [...slice].reverse().find(t => t.kind === 'word');
+  if (lastWord) {
+    verseBadge.textContent = 'v. ' + lastWord.verse;
+
+    // Verse-paced background scroll
+    if (lastWord.verse !== lastVerseRevealed) {
+      lastVerseRevealed = lastWord.verse;
+      renderBg(slice);
+      setTimeout(() => {
+        bgScroll.scrollTo({ top: bgScroll.scrollHeight - bgScroll.clientHeight, behavior: 'smooth' });
+      }, 80);
+    }
+  }
+
+  // End state
+  if (revealed >= tokens.length && tokens.length > 0) {
+    endMsg.classList.add('visible');
+  }
+}
+
+// ── Render background ─────────────────────────────────────────
+function renderBg(slice) {
+  bgText.innerHTML = '';
+  const p = document.createElement('p');
+  slice.forEach(t => {
+    if (t.kind === 'verse') {
+      const sup = document.createElement('sup');
+      sup.style.cssText = 'margin: 0 0.25rem; font-size: 0.42em; color: oklch(0.82 0.13 80 / 0.6);';
+      sup.textContent = t.verse;
+      p.appendChild(sup);
+    } else {
+      const s = document.createElement('span');
+      s.textContent = t.text + ' ';
+      p.appendChild(s);
+    }
+  });
+  bgText.appendChild(p);
+}
+
+// ── Playback ──────────────────────────────────────────────────
+function scheduleNext() {
+  if (!playing || wpm === 0) return;
+  const base = Math.max(60, 60000 / wpm);
+  const current = tokens[revealed - 1];
+  const mult = current ? pauseMultiplier(current) : 1.0;
+  const delay = base * mult;
+  timerId = setTimeout(() => {
+    if (revealed < tokens.length) {
+      revealed++;
+      renderFg();
+      scheduleNext();
+    } else {
+      setPlaying(false);
+    }
+  }, delay);
+}
+
+function setPlaying(val) {
+  playing = val;
+  clearTimeout(timerId);
+  document.body.className = val ? 'playing' : 'paused';
+  playBtn.textContent = val ? 'Pause' : 'Play';
+  if (val) scheduleNext();
+}
+
+function reset() {
+  setPlaying(false);
+  revealed = 0;
+  lineHeightPx = 0;
+  lastVerseRevealed = 0;
+  fgClip.style.height = '3.1em';
+  fgClip.scrollTop = 0;
+  bgScroll.scrollTop = 0;
+  fgText.innerHTML = '';
+  bgText.innerHTML = '';
+  verseBadge.textContent = 'v. 1';
+  endMsg.classList.remove('visible');
+}
+
+// ── Controls ──────────────────────────────────────────────────
+playBtn.addEventListener('click', () => setPlaying(!playing));
+resetBtn.addEventListener('click', reset);
+
+wpmSlider.addEventListener('input', () => {
+  wpm = parseInt(wpmSlider.value);
+  wpmDisplay.textContent = wpm === 0 ? 'paused' : wpm;
+  if (playing) {
+    clearTimeout(timerId);
+    scheduleNext();
+  }
+});
+
+// Tap anywhere on pane to pause/play
+document.querySelector('.pane').addEventListener('click', (e) => {
+  if (e.target.closest('.pull-handle') || e.target.closest('.speed-zone')) return;
+  setPlaying(!playing);
+});
+</script>
+</body>
+</html>
