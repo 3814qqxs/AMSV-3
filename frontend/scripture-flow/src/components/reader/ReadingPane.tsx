@@ -51,10 +51,10 @@ export function ReadingPane({
   // In phrase mode: groups of ≤3 words, broken at punctuation boundaries.
   // Verse markers are always their own single-token phrase.
   const phraseEnd = useMemo<number[]>(() => {
-    const result = new Array(tokens.length);
     if (!phraseMode) {
-      return result.map((_, i) => i);
+      return Array.from({ length: tokens.length }, (_, i) => i);
     }
+    const result = new Array<number>(tokens.length);
     let phraseStart = 0;
     let wordCount = 0;
     const closePhrase = (end: number) => {
