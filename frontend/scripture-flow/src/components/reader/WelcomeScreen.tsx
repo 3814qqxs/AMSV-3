@@ -55,7 +55,7 @@ export function WelcomeScreen({
           </p>
           <h1 className="mb-1 font-serif text-5xl text-primary">Lectio</h1>
           <p className="mb-8 text-sm text-muted-foreground">
-            Paced reading · American Majority Standard Version
+            AMSV {/* TODO: welcome subtitle */}
           </p>
 
           <div className="flex flex-col items-center gap-3">
