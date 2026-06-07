@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { NavSheet } from "./NavSheet";
 
 const WELCOMED_KEY = "amsv-welcomed";
@@ -49,12 +49,14 @@ export function WelcomeScreen({
 
   return (
     <>
+      <AnimatePresence>
+      {!showNav && (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0, scale: 0.98 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className={`fixed inset-0 z-[70] flex flex-col items-center justify-center bg-ink px-8 text-center transition-opacity duration-150 ${showNav ? "opacity-0 pointer-events-none" : ""}`}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-ink px-8 text-center"
       >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -90,6 +92,8 @@ export function WelcomeScreen({
           </p>
         </motion.div>
       </motion.div>
+      )}
+      </AnimatePresence>
 
       <NavSheet
         open={showNav}
