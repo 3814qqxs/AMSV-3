@@ -59,7 +59,7 @@ def parse_line(line: str):
     }
 
 
-def import_text(filepath: str):
+def import_text(filepath: str, clean: bool = False):
     path = Path(filepath)
     if not path.exists():
         print(f"Error: file not found: {filepath}", file=sys.stderr)
@@ -69,6 +69,11 @@ def import_text(filepath: str):
     imported = 0
     skipped = 0
     try:
+        if clean:
+            deleted = db.query(BibleText).delete()
+            db.commit()
+            print(f"Clean mode: removed {deleted} existing rows.")
+
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
@@ -90,5 +95,8 @@ def import_text(filepath: str):
 
 
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else "data/asv_og.txt"
-    import_text(path)
+    args = sys.argv[1:]
+    clean_flag = "--clean" in args
+    file_args = [a for a in args if not a.startswith("--")]
+    path = file_args[0] if file_args else "data/asv_og.txt"
+    import_text(path, clean=clean_flag)

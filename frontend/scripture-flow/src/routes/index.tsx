@@ -120,8 +120,8 @@ function ReaderPage() {
       return Math.max(0, Math.min(500, next));
     });
   }, []);
-  const handleNext = useCallback(() => setRef((r) => nextChapter(r)), []);
-  const handlePrev = useCallback(() => setRef((r) => prevChapter(r)), []);
+  const handleNext = useCallback(() => { setRef((r) => nextChapter(r)); setPlaying(true); }, []);
+  const handlePrev = useCallback(() => { setRef((r) => prevChapter(r)); setPlaying(true); }, []);
   const openRefs = useCallback(() => setSide("left"), []);
   const openNotes = useCallback(() => setSide("right"), []);
   const handleTogglePlay = useCallback(() => setPlaying((p) => !p), []);
@@ -342,7 +342,7 @@ function ReaderPage() {
         {/* Speed preset cycle button (4-D) */}
         <button
           onClick={() => setWpm(nextPreset(wpm))}
-          className="chrome-element absolute bottom-8 right-4 z-20 rounded-full border border-border/40 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 hover:text-muted-foreground transition"
+          className="absolute bottom-8 right-4 z-20 rounded-full border border-border/40 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 hover:text-muted-foreground transition"
           aria-label="Cycle reading speed preset"
         >
           {presetLabel(wpm)}

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { motion, AnimatePresence, type PanInfo } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import type { Verse } from "@/lib/bible";
 
 export function HistoryPane({
@@ -29,24 +29,39 @@ export function HistoryPane({
     groups.push({ verse: v.verse, words });
   }
 
-  // Swipe UP on the top handle → close and return to reading pane (2-B)
-  function handleTopDragEnd(_: unknown, info: PanInfo) {
-    if (info.offset.y < -60 || info.velocity.y < -400) onClose();
+  // Top pill: swipe UP → close and return to reading pane.
+  // Uses setPointerCapture so events never reach the bottom strip.
+  const topStartY = useRef<number | null>(null);
+
+  function handleTopPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    topStartY.current = e.clientY;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopPropagation();
   }
 
-  // Swipe UP on the bottom strip → open NavSheet to browse (2-C)
-  const navSwipeStartY = useRef<number | null>(null);
+  function handleTopPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (topStartY.current === null) return;
+    const dy = topStartY.current - e.clientY; // positive = upward
+    topStartY.current = null;
+    e.stopPropagation();
+    if (dy > 40) onClose();
+  }
+
+  // Bottom strip: swipe UP → open NavSheet to browse.
+  const navStartY = useRef<number | null>(null);
 
   function handleNavPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    navSwipeStartY.current = e.clientY;
+    navStartY.current = e.clientY;
     e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopPropagation();
   }
 
   function handleNavPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    if (navSwipeStartY.current === null) return;
-    const dy = navSwipeStartY.current - e.clientY;
+    if (navStartY.current === null) return;
+    const dy = navStartY.current - e.clientY;
+    navStartY.current = null;
+    e.stopPropagation();
     if (dy > 40) onNavigate();
-    navSwipeStartY.current = null;
   }
 
   return (
@@ -60,17 +75,18 @@ export function HistoryPane({
           className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-ink/90 backdrop-blur-md"
           style={{ willChange: "transform" }}
         >
-          {/* Top drag handle — swipe UP to return to reading pane */}
-          <motion.div
-            drag="y"
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0.25, bottom: 0 }}
-            onDragEnd={handleTopDragEnd}
-            className="shrink-0 flex cursor-s-resize touch-none flex-col items-center pt-3 pb-2"
+          {/* Top pill — swipe UP to return to reading pane */}
+          <div
+            onPointerDown={handleTopPointerDown}
+            onPointerUp={handleTopPointerUp}
+            className="shrink-0 flex cursor-s-resize touch-none flex-col items-center gap-1.5 pt-3 pb-3"
             aria-label="Swipe up to return to reading pane"
           >
-            <div className="h-1 w-10 rounded-full bg-primary/30" />
-          </motion.div>
+            <div className="h-1 w-10 rounded-full bg-primary/50" />
+            <p className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/40 select-none">
+              swipe up to close
+            </p>
+          </div>
 
           {/* Header */}
           <div className="shrink-0 px-6 pb-4 md:px-12">
@@ -95,7 +111,7 @@ export function HistoryPane({
                     {g.words.map((w, wi) => (
                       <span
                         key={wi}
-                        className={w.done ? "text-foreground/90" : "text-muted-foreground/30"}
+                        className={w.done ? "text-foreground/90" : "text-muted-foreground/50"}
                       >
                         {w.text}{" "}
                       </span>
@@ -110,10 +126,13 @@ export function HistoryPane({
           <div
             onPointerDown={handleNavPointerDown}
             onPointerUp={handleNavPointerUp}
-            className="shrink-0 flex h-8 cursor-n-resize touch-none items-center justify-center"
+            className="shrink-0 flex cursor-n-resize touch-none flex-col items-center gap-1.5 pt-2 pb-3"
             aria-label="Swipe up to browse books and chapters"
           >
-            <div className="h-1 w-10 rounded-full bg-primary/25" />
+            <p className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground/40 select-none">
+              swipe up to navigate
+            </p>
+            <div className="h-1 w-10 rounded-full bg-primary/30" />
           </div>
         </motion.div>
       )}

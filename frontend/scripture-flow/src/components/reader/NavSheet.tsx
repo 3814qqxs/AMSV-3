@@ -10,11 +10,13 @@ export function NavSheet({
   onCommit,
   onClose,
   currentBook,
+  initialTestament,
 }: {
   open: boolean;
   onCommit: (book: string, chapter: number) => void;
   onClose: () => void;
   currentBook: string;
+  initialTestament?: Testament;
 }) {
   // Derive which testament the currently-reading book belongs to
   const defaultTestament = useMemo<Testament>(() => {
@@ -33,9 +35,9 @@ export function NavSheet({
     if (open) {
       setView("books");
       setSelectedBook(null);
-      setTestament(defaultTestament);
+      setTestament(initialTestament ?? defaultTestament);
     }
-  }, [open, defaultTestament]);
+  }, [open, defaultTestament, initialTestament]);
 
   function handleSelectBook(book: string) {
     setSelectedBook(book);

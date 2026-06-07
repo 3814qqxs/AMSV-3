@@ -405,7 +405,7 @@ export function ReadingPane({
         aria-label="Scroll or swipe up/down to change reading speed"
       >
         <span className="mb-1 tabular-nums text-[11px] font-medium text-primary/70">
-          {wpm === 0 ? "paused" : `${wpm} wpm`}
+          {!playing || wpm === 0 ? "paused" : `${wpm} wpm`}
         </span>
       </div>
     </div>
