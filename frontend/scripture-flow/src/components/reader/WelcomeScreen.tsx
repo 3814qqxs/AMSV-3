@@ -54,7 +54,7 @@ export function WelcomeScreen({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0, scale: 0.98 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-ink px-8 text-center"
+        className={`fixed inset-0 z-[70] flex flex-col items-center justify-center bg-ink px-8 text-center transition-opacity duration-150 ${showNav ? "opacity-0 pointer-events-none" : ""}`}
       >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -74,18 +74,15 @@ export function WelcomeScreen({
           </p>
 
           <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={() => handleTestamentTap("Old Testament")}
-              className="w-56 rounded-full border border-border px-6 py-3 font-serif text-base text-foreground transition hover:bg-primary/10 hover:text-primary"
-            >
-              Old Testament
-            </button>
-            <button
-              onClick={() => handleTestamentTap("New Testament")}
-              className="w-56 rounded-full bg-primary px-6 py-3 font-serif text-base text-primary-foreground transition hover:opacity-90"
-            >
-              New Testament
-            </button>
+            {(["Old Testament", "New Testament"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => handleTestamentTap(t)}
+                className="w-56 rounded-full border border-border px-6 py-3 font-serif text-base text-muted-foreground transition hover:border-primary/60 hover:text-primary"
+              >
+                {t}
+              </button>
+            ))}
           </div>
 
           <p className="mt-12 text-[10px] uppercase tracking-[0.25em] text-muted-foreground/40">
